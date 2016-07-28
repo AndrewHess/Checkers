@@ -1,0 +1,566 @@
+import copy
+import random
+
+# Make a checkers game that has an AI opponent who uses Q-learning
+
+class Checker:
+    def __init__(self, is_black, is_king, pos):
+        self.is_black = is_black
+        self.is_king = is_king
+        self.pos = pos
+    
+    def __hash__(self):
+        return (hash(str(self.is_black))  + hash(str(self.is_king)) + hash(str(self.pos)))
+    
+    def make_king():
+        self.is_king = True
+    
+    def move(new_pos):
+        self.pos = new_pos
+    
+class Board:
+    def __init__(self, blank = "_", grid = []):
+        self.checkers = []
+        self.black_turn = True
+        
+        # setup the board
+        self.grid = grid
+        for i in range(0, 8):
+            row = []
+            for j in range(0, 8):
+                row.append(blank)
+            self.grid.append(row)
+        
+        # kings are represented by "R" or "B" instead of "r" or "b"
+        
+        for i in range(0, 3):
+            for j in range(0, 4):
+                self.checkers.append(Checker(False, False, (i, (2 * j) + i % 2)))
+                self.grid[2*j + (i%2)][i] = "r"
+        
+        for i in range(5, 8):
+            for j in range(0, 4):
+                self.checkers.append(Checker(True, False, (i, (2 * j) + i % 2)))
+                self.grid[2*j + (i%2)][i] = "b"
+    
+    def __hash__(self):
+        res = 0
+        for checker in self.checkers:
+            res += hash(checker)
+        
+        return res
+    
+    def clone(self):
+        return copy.deepcopy(self)
+    
+    def print_board(self):
+        for i in range (len(self.grid) -1, -1, -1):
+            print(i + 1, end = "  ") # print the row numbers
+            
+            # print what is at each position in the grid
+            for j in range(0, len(self.grid[i])):
+                print(self.grid[j][i] + " ", end = "")
+                
+            print()
+            
+        # print the column references(letters)
+        print("\n   ", end = "")
+        for i in range (65, 73):
+            print(chr(i), end = " ")
+        
+        print()
+
+    def game_over(self):
+        red = False
+        black = False
+        
+        # make sure both teams have pieces
+        for i in range (0, len(self.grid)):
+            for j in range (0, len(self.grid[i])):
+                cell = self.grid[i][j]
+                if cell == 'b' or cell == 'B':
+                    black = True
+                if cell == 'r' or cell == 'R':
+                    red = True
+        
+        winner = ""
+        if not black:
+            winner = "Red"
+        if not red:
+            winner = "Black"
+        
+        return winner
+
+class AIPlayer:
+    def __init__(self, is_red = False):
+        self.is_red = is_red
+    
+    def available_moves_sorted(self, game, board, is_red):
+        moves = game.available_moves(board, is_red)
+        vals = []
+        res = []
+        
+        for move in moves:
+            board_copy = board.clone()
+            game.move_piece(move, board_copy, is_red)
+            vals += [(self.evaluate(board_copy), move)]
+        
+        vals.sort(key = lambda tup: tup[0])
+        for (val, move) in vals:
+            res += [move]
+        
+        return res
+    
+    def alphabeta(self, game, board, depth, a, b, maximizing):
+        if depth == 0 or board.game_over():
+            return self.evaluate(board)
+        
+        moves = self.available_moves_sorted(game, board, self.is_red)
+        # moves = game.available_moves(board, self.is_red if maximizing else not self.is_red)
+        
+        if maximizing:
+            result = -10000 # negative infinity
+            
+            for move in moves:
+                # make the move
+                board_copy = board.clone()
+                game.move_piece(move, board_copy, self.is_red)
+                
+                result = max(result, self.alphabeta(game, board_copy, depth -1, a, b, False))
+                a = max(a, result)
+                if b <= a:
+                    break
+                    
+            return result
+        else:
+            result = 10000 # positive infinity
+            
+            for move in moves:
+                # make the move
+                board_copy = board.clone()
+                game.move_piece(move, board_copy, self.is_red)
+                
+                result = min(result, self.alphabeta(game, board_copy, depth -1, a, b, True))
+                b = min(b, result)
+                if b <= a:
+                    break
+                    
+            return result
+        
+    def move(self, board, game):
+        # find the available moves
+        moves = self.available_moves_sorted(game, board, self.is_red)
+        
+        if len(moves) <= 0:
+            return False # no move was made
+        
+        if len(moves) == 1:
+            # make the move
+            game.move_piece(moves[0], board, self.is_red)
+            return True # a move was made
+        
+        # get the alphabeta value for each move to find the best
+        best_moves = []
+        best_val = -10000 # negative infinity
+        for move in moves:
+            # make the move on a copy of the board
+            board_copy = board.clone()
+            game.move_piece(move, board_copy, self.is_red)
+            
+            # evaluate the move
+            val = self.alphabeta(game, board_copy, 3, -10000, 10000, self.is_red)
+            if val == best_val:
+                best_moves.append(move)
+            elif val > best_val:
+                # update best_val and clear best_moves
+                best_val = val
+                best_moves = []
+                best_moves.append(move)
+        
+        if len(best_moves) == 0:
+            return False # no move was made
+        else:
+            # make a random move from best_moves
+            game.move_piece(random.choice(best_moves), board, self.is_red)
+            return True # there was a move
+    
+    def evaluate(self, board):
+        total = 0
+        
+        # total is mainly based on what pieces are on the board, not where
+        for i in range (0, 8):
+            for j in range(0, 8):
+                cell = board.grid[i][j]
+                if cell == 'r':
+                    total += 1
+                if cell == 'R':
+                    total += 2.5
+                if cell == 'b':
+                    total -= 1
+                if cell == 'B':
+                    total -= 2.5
+        
+        # If a piece is on the edge, total gets a small change
+        for i in range (0, 8):
+            for j in [0, 7]:
+                for k in range(0, 1):
+                    # the corner pieces are counted twice (k == 0 and k == 1) making them better than just an edge
+                    # piece, which is counted just once
+                    cell = None
+                    if k == 0:
+                        cell = board.grid[i][j]
+                    if k == 1:
+                        cell = board.grid[j][i]
+                        
+                    val = 0.1
+                    if cell == 'r' or cell == 'R':
+                        total += val
+                    if cell == 'b' or cell == 'B':
+                        total -= val
+        
+        total *= -1
+        
+        return total
+    
+class CheckersGame:
+    def __init__(self, user_is_red = True):
+        if user_is_red:
+            self.user_color = "red"
+            self.AI_color = "black"
+        else:
+            self.user_color = "black"
+            self.AI_color = "red"
+            
+        self.blank = "_"
+    
+    def available_moves(self, board, is_red, selected = None):
+        moves = []
+        
+        moveUp = False
+        moveDown = False
+        
+        if selected == None:
+            # loop through all pieces on the board and check for a jump
+            for i in range (0, 8):
+                for j in range (0, 8):
+                    cell = board.grid[i][j]
+                    if is_red:
+                        if cell == 'r':
+                            moveUp = True
+                        if cell == 'R':
+                            moveUp = True
+                            moveDown = True
+                    else:
+                        if cell == 'b':
+                            moveDown = True
+                        if cell == 'B':
+                            moveDown = True
+                            moveUp = True
+
+                    selected = chr(i + 65) + chr(j + 49)
+                    
+                    if moveUp:
+                        # try to jump
+                        if j + 2 < 8:
+                            if i + 2 < 8:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 67) + chr(j + 51)
+                                if game.is_valid(selected, new_pos, board_clone, is_red):
+                                    next_moves = self.available_moves(board_clone, is_red, new_pos)
+
+                                    for move in next_moves:
+                                        moves += [selected + ", " + move]
+                                        
+                            if i - 2 >= 0:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 63) + chr(j + 51)
+                                if game.is_valid(selected, new_pos, board_clone, is_red):
+                                    next_moves = self.available_moves(board_clone, is_red, new_pos)
+
+                                    for move in next_moves:
+                                        moves += [selected + ", " + move]
+                    
+                    if moveDown:
+                        # try to jump
+                        if j - 2 >= 0:
+                            if i + 2 < 8:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 67) + chr(j + 47)
+                                if game.is_valid(selected, new_pos, board_clone, is_red):
+                                    next_moves = self.available_moves(board_clone, is_red, new_pos)
+
+                                    for move in next_moves:
+                                        moves += [selected + ", " + move]
+                                        
+                            if i - 2 >= 0:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 63) + chr(j + 47)
+                                if game.is_valid(selected, new_pos, board_clone, is_red):
+                                    next_moves = self.available_moves(board_clone, is_red, new_pos)
+
+                                    for move in next_moves:
+                                        moves += [selected + ", " + move]
+            
+            if len(moves) > 0:
+                # If a jump is possible, then it has to be taken
+                return moves
+            
+            # check for non-jumping moves
+            for i in range (0, 8):
+                for j in range (0, 8):
+                    cell = board.grid[i][j]
+                    if is_red:
+                        if cell == 'r':
+                            moveUp = True
+                        if cell == 'R':
+                            moveUp = True
+                            moveDown = True
+                    else:
+                        if cell == 'b':
+                            moveDown = True
+                        if cell == 'B':
+                            moveDown = True
+                            moveUp = True
+
+                    selected = chr(i + 65) + chr(j + 49)
+                    
+                    if moveUp:
+                        if j + 1 < 8:
+                            if i - 1 >= 0:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 64) + chr(j + 50)
+                                if self.is_valid(selected, new_pos, board_clone, is_red):
+                                    moves += [selected + ", " + new_pos]
+                            if i + 1 < 8:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 66) + chr(j + 50)
+                                if self.is_valid(selected, new_pos, board_clone, is_red):
+                                    moves += [selected + ", " + new_pos]
+                                    
+                    if moveDown:
+                        if j - 1 >= 0:
+                            if i - 1 >= 0:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 64) + chr(j + 48)
+                                if self.is_valid(selected, new_pos, board_clone, is_red):
+                                    moves += [selected + ", " + new_pos]
+                            if i + 1 < 8:
+                                board_clone = board.clone()
+                                new_pos = chr(i + 66) + chr(j + 48)
+                                if self.is_valid(selected, new_pos, board_clone, is_red):
+                                    moves += [selected + ", " + new_pos]
+                                    
+                    moveUp = False
+                    moveDown = False
+            
+        else: # you have to move a specific piece and jump the opponent
+            # moves += [selected]
+            
+            # selected is of the form Letter + Number
+            i = ord(selected.upper()[0]) - 65
+            j = ord(selected[1]) - 49
+            
+            moveUp = False
+            moveDown = False
+            
+            cell = board.grid[i][j]
+            if is_red:
+                if cell == 'r':
+                    moveUp = True
+                if cell == 'R':
+                    moveUp = True
+                    moveDown = True
+            else:
+                if cell == 'b':
+                    moveDown = True
+                if cell == 'B':
+                    moveDown = True
+                    moveUp = True
+            
+            # try to jump
+            if moveDown:
+                if j - 2 >= 0:
+                    if i + 2 < 8:
+                        board_clone = board.clone()
+                        new_pos = chr(i + 67) + chr(j + 47)
+                        if self.is_valid(selected, new_pos, board_clone, is_red):
+                            next_moves = self.available_moves(board_clone, is_red, new_pos)
+                            
+                            for move in next_moves:
+                                moves += [selected + ", " +  move]
+                                
+                    if i - 2 >= 0:
+                        board_clone = board.clone()
+                        new_pos = chr(i + 63) + chr(j + 47)
+                        if self.is_valid(selected, new_pos, board_clone, is_red):
+                            next_moves = self.available_moves(board_clone, is_red, new_pos)
+                            
+                            for move in next_moves:
+                                moves += [selected + ", " + move]
+            
+            if moveUp:
+                if j + 2 < 8:
+                    if i + 2 < 8:
+                        board_clone = board.clone()
+                        new_pos = chr(i + 67) + chr(j + 51)
+                        if self.is_valid(selected, new_pos, board_clone, is_red):
+                            next_moves = self.available_moves(board_clone, is_red, new_pos)
+                            
+                            for move in next_moves:
+                                moves += [selected + ", " +  move]
+                                
+                    if i - 2 >= 0:
+                        board_clone = board.clone()
+                        new_pos = chr(i + 63) + chr(j + 51)
+                        if self.is_valid(selected, new_pos, board_clone, is_red):
+                            next_moves = self.available_moves(board_clone, is_red, new_pos)
+                            
+                            for move in next_moves:
+                                moves += [selected + ", " + move]
+
+            if len(moves) == 0:
+                moves += [selected]
+                                
+        return moves
+    
+    def is_valid(self, old, new, board, is_red):
+        old_pos = (ord(old.upper()[0]) - 65, ord(old.upper()[1]) - 49)
+        new_pos = (ord(new.upper()[0]) - 65, ord(new.upper()[1]) - 49)
+        
+        piece = board.grid[old_pos[0]][old_pos[1]]
+        dest  = board.grid[new_pos[0]][new_pos[1]]
+        
+        if piece[0] != 'r' and piece[0] != 'R' and piece[0] != 'b' and piece[0] != "B":
+            return False
+        
+        if is_red:
+            if piece[0] != 'r' and piece[0] != 'R':
+                return False
+        else:
+            if piece[0] != 'b' and piece[0] != 'B':
+                return False
+        
+        if dest[0] != self.blank:
+            # must move to an empty space
+            return False
+        
+        # find how far the piece moved
+        distance = abs(old_pos[0] - new_pos[0]) + abs(old_pos[1] - new_pos[1])
+        
+        # make sure it moved diagonally
+        if abs(old_pos[0] - new_pos[0]) != 1 and abs(old_pos[0] - new_pos[0]) != 2:
+            return False
+        if abs(old_pos[1] - new_pos[1]) != abs(old_pos[0] - new_pos[0]):
+            return False
+        
+        if distance != 2 and distance != 4:
+            return False
+        
+        # find which diretion the piece can move
+        moveUp = False
+        moveDown = False
+        
+        if piece[0] == 'r' or piece[0] == 'R' or piece[0] == "B":
+            moveUp = True
+        if piece[0] == 'b' or piece[0] == 'B' or piece[0] == "R":
+            moveDown = True
+        
+        # make sure the piece is moving in a valid direction
+        if not moveUp and new_pos[1] > old_pos[1]:
+            return False
+        if not moveDown and new_pos[1] < old_pos[1]:
+            return False
+        
+        # check for a jump
+        if distance == 4:
+            # make sure the jumped space is an opponent's piece
+            mid_pos = (int((old_pos[0] + new_pos[0])/2), int((old_pos[1] + new_pos[1])/2))
+            skipped = board.grid[mid_pos[0]][mid_pos[1]]
+            
+            if skipped == self.blank:
+                return False
+            
+            if skipped[0] == 'r' or skipped[0] == 'R':
+                if piece[0] == 'r' or piece[0] == 'R':
+                    return False
+            else:
+                if piece[0] == 'b' or piece[0] == 'B':
+                    return False
+        
+        # If it gets here, it should be a valid move, so move the piece
+        board.grid[old_pos[0]][old_pos[1]] = self.blank
+        board.grid[new_pos[0]][new_pos[1]] = piece
+        
+        if distance == 4:
+            mid_pos = (int((old_pos[0] + new_pos[0])/2), int((old_pos[1] + new_pos[1])/2))
+            board.grid[mid_pos[0]][mid_pos[1]] = self.blank
+        
+        # promote the piece to king if it made it to the other side
+        if piece[0] == 'r' and new_pos[1] == 7:
+            board.grid[new_pos[0]][new_pos[1]] = 'R'
+        if piece[0] == 'b' and new_pos[1] == 0:
+            board.grid[new_pos[0]][new_pos[1]] = 'B'
+            
+        return True
+    
+    def move_piece(self, move, board, is_red):
+        move = move.split(", ")
+        for i in range (0, len(move) -1):
+            old = move[i]
+            new = move[i +1]
+            game.is_valid(old, new, board, is_red)
+    
+    def get_user_move(self, board):
+        moves = self.available_moves(board, self.user_color == "red")
+        illegal = True
+        
+        if len(moves) <= 0:
+            return False # no move was made
+        
+        while illegal:
+            illegal = False
+            move = input().strip().upper()
+            
+            if move.lower() == "quit":
+                raise SystemExit
+            
+            if move not in moves:
+                print("Invalid move. Try again.")
+                print("Valid moves:", moves)
+                illegal = True
+        
+        # make the move
+        game.move_piece(move, board, self.user_color == "red")
+        
+        return True # a move was made
+    
+    def play(self):
+        board = Board(self.blank)
+        ai = AIPlayer(self.AI_color == "red")
+        
+        winner = None
+        while board.game_over() == "":
+            # print the board
+            board.print_board()
+            
+            print("Valid moves:", game.available_moves(board, self.user_color == "red"))
+            
+            # the human player moves
+            if not self.get_user_move(board):
+                winner = "Red" if ai.is_red else "Black"
+                print("")
+            
+            board.print_board()
+            
+            # the AI moves
+            if not ai.move(board, game):
+                winner = "Black" if ai.is_red else "Red"
+                break
+        
+        if winner == None:
+            winner = board.game_over()
+        
+        print("\nThe " + winner + " team won!")
+        
+game = CheckersGame()
+game.play()
